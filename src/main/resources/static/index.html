@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkForge | Premium URL Shortener</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header glass-card">
+            <div class="logo-container">
+                <div class="logo-icon"></div>
+                <h1 class="logo-text">LinkForge</h1>
+            </div>
+            <p class="tagline">Crafting shorter links for a wider reach.</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Stats Row -->
+            <section class="stats-row">
+                <div class="stat-card glass-card">
+                    <div class="stat-icon urls-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                    </div>
+                    <div class="stat-info">
+                        <p class="stat-label">Total URLs</p>
+                        <h2 class="stat-value" id="stat-total-urls">0</h2>
+                    </div>
+                </div>
+                <div class="stat-card glass-card">
+                    <div class="stat-icon clicks-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    </div>
+                    <div class="stat-info">
+                        <p class="stat-label">Total Clicks</p>
+                        <h2 class="stat-value" id="stat-total-clicks">0</h2>
+                    </div>
+                </div>
+                <div class="stat-card glass-card">
+                    <div class="stat-icon today-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    </div>
+                    <div class="stat-info">
+                        <p class="stat-label">URLs Today</p>
+                        <h2 class="stat-value" id="stat-urls-today">0</h2>
+                    </div>
+                </div>
+            </section>
+
+            <div class="content-grid">
+                <!-- Create Form -->
+                <section class="create-section glass-card">
+                    <h2 class="section-title">Forge a New Link</h2>
+                    <form id="create-url-form" class="create-form">
+                        <div class="form-group">
+                            <label for="url-input" class="visually-hidden">Destination URL</label>
+                            <div class="input-wrapper">
+                                <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                <input type="url" id="url-input" class="input-field" placeholder="https://example.com/long-url" required>
+                            </div>
+                        </div>
+                        
+                        <div class="advanced-toggle" id="advanced-toggle">
+                            <span>Advanced Options</span>
+                            <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </div>
+                        
+                        <div class="advanced-options" id="advanced-options">
+                            <div class="form-group">
+                                <label for="alias-input">Custom Alias (Optional)</label>
+                                <div class="input-wrapper">
+                                    <span class="input-prefix">linkforge.to/</span>
+                                    <input type="text" id="alias-input" class="input-field with-prefix" placeholder="my-custom-link">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="expiry-input">Expiration Date (Optional)</label>
+                                <input type="datetime-local" id="expiry-input" class="input-field">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary w-full" id="submit-btn">
+                            <span class="btn-text">Shorten URL</span>
+                            <span class="btn-loader hidden"></span>
+                        </button>
+                    </form>
+                </section>
+
+                <!-- URL List -->
+                <section class="urls-section glass-card">
+                    <div class="section-header">
+                        <h2 class="section-title">Your Links</h2>
+                        <div class="search-wrapper">
+                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <input type="text" id="search-input" class="input-field small" placeholder="Search links...">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="url-table">
+                            <thead>
+                                <tr>
+                                    <th>Short Link</th>
+                                    <th>Original URL</th>
+                                    <th>Created</th>
+                                    <th>Clicks</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="url-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                        <div id="empty-state" class="empty-state hidden">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                            <p>No links found. Create your first short link above!</p>
+                        </div>
+                        <div id="table-loader" class="table-loader">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div class="modal-backdrop" id="qr-modal">
+        <div class="modal glass-card">
+            <button class="modal-close" aria-label="Close modal">&times;</button>
+            <div class="modal-header">
+                <h3>QR Code</h3>
+                <p id="qr-short-url" class="text-muted"></p>
+            </div>
+            <div class="modal-body qr-container">
+                <div class="qr-wrapper">
+                    <img id="qr-image" src="" alt="QR Code" class="qr-code">
+                    <div id="qr-loader" class="spinner-wrapper"><div class="spinner"></div></div>
+                </div>
+                <button class="btn-secondary w-full mt-4" id="download-qr-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Download PNG
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Modal -->
+    <div class="modal-backdrop" id="analytics-modal">
+        <div class="modal large glass-card">
+            <button class="modal-close" aria-label="Close modal">&times;</button>
+            <div class="modal-header">
+                <h3>Link Analytics</h3>
+                <div class="flex-between">
+                    <a id="analytics-short-url" href="#" target="_blank" class="text-gradient"></a>
+                    <span class="badge" id="analytics-total-clicks">0 clicks</span>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="analytics-loader" class="spinner-wrapper"><div class="spinner"></div></div>
+                <div id="analytics-content" class="analytics-content hidden">
+                    <div class="chart-section">
+                        <h4>Clicks over time</h4>
+                        <div class="chart-container line-chart">
+                            <canvas id="line-chart-canvas"></canvas>
+                        </div>
+                    </div>
+                    <div class="charts-row">
+                        <div class="chart-section half">
+                            <h4>Browsers</h4>
+                            <div class="chart-container pie-chart">
+                                <canvas id="browser-chart-canvas"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-section half">
+                            <h4>Operating Systems</h4>
+                            <div class="chart-container pie-chart">
+                                <canvas id="os-chart-canvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

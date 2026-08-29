@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: url-shortener
+  data:
+    mongodb:
+      uri: mongodb://admin:admin123@localhost:27017/urlshortener
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+app:
+  base-url: http://localhost:8080
+  short-code-length: 7
+  redis:
+    cache-ttl-hours: 24
