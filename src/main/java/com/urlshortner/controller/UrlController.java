@@ -31,7 +31,6 @@ public class UrlController {
 
     @GetMapping("/{id}")
     public ResponseEntity<UrlResponse> getUrlById(@PathVariable String id) {
-        // Technically mapping id to shortCode in the method parameter here, though the prompt implies using shortCode. Let's use id.
         return ResponseEntity.ok(urlShortenerService.getUrlByShortCode(id));
     }
 

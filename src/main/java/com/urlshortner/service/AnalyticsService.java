@@ -29,7 +29,7 @@ public class AnalyticsService {
     private String baseUrl;
 
     public AnalyticsResponse getAnalytics(String shortCode) {
-        ShortUrl shortUrl = shortUrlRepository.findByShortCode(shortCode)
+        ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
 
         List<ClickEvent> clicks = clickEventRepository.findByShortCode(shortCode);
@@ -71,11 +71,11 @@ public class AnalyticsService {
     }
 
     public DashboardResponse getDashboardStats() {
-        long totalUrls = shortUrlRepository.count();
-        long totalClicks = shortUrlRepository.findAll().stream().mapToLong(ShortUrl::getClickCount).sum();
-        long urlsCreatedToday = shortUrlRepository.countByCreatedAtAfter(LocalDate.now().atStartOfDay());
+        long totalUrls = shortUrlRepository.countByActiveTrue();
+        long totalClicks = shortUrlRepository.findAllByActiveTrueOrderByCreatedAtDesc().stream().mapToLong(ShortUrl::getClickCount).sum();
+        long urlsCreatedToday = shortUrlRepository.countByActiveTrueAndCreatedAtAfter(LocalDate.now().atStartOfDay());
 
-        List<UrlResponse> topUrls = shortUrlRepository.findTop10ByOrderByClickCountDesc()
+        List<UrlResponse> topUrls = shortUrlRepository.findTop10ByActiveTrueOrderByClickCountDesc()
                 .stream()
                 .map(this::buildUrlResponse)
                 .collect(Collectors.toList());

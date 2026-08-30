@@ -10,9 +10,14 @@ import java.util.Optional;
 
 @Repository
 public interface ShortUrlRepository extends MongoRepository<ShortUrl, String> {
-    Optional<ShortUrl> findByShortCode(String shortCode);
+    Optional<ShortUrl> findByShortCodeAndActiveTrue(String shortCode);
+
+    // Deliberately unfiltered: a deleted code stays reserved forever, otherwise
+    // code generation could reissue it and old links in the wild would repoint.
     boolean existsByShortCode(String shortCode);
-    List<ShortUrl> findTop10ByOrderByClickCountDesc();
-    long countByCreatedAtAfter(LocalDateTime date);
-    List<ShortUrl> findAllByOrderByCreatedAtDesc();
+
+    List<ShortUrl> findAllByActiveTrueOrderByCreatedAtDesc();
+    List<ShortUrl> findTop10ByActiveTrueOrderByClickCountDesc();
+    long countByActiveTrue();
+    long countByActiveTrueAndCreatedAtAfter(LocalDateTime date);
 }

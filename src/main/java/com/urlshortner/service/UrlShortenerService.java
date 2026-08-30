@@ -12,12 +12,10 @@ import com.urlshortner.util.Base62Encoder;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,16 +24,12 @@ public class UrlShortenerService {
 
     private final ShortUrlRepository shortUrlRepository;
     private final ClickEventRepository clickEventRepository;
-    private final RedisTemplate<String, String> redisTemplate;
 
     @Value("${app.base-url}")
     private String baseUrl;
 
     @Value("${app.short-code-length}")
     private int codeLength;
-
-    @Value("${app.redis.cache-ttl-hours}")
-    private long cacheTtlHours;
 
     public UrlResponse createShortUrl(CreateUrlRequest request) {
         String shortCode;
@@ -57,27 +51,14 @@ public class UrlShortenerService {
                 .expiresAt(request.getExpiresAt())
                 .build();
 
-        ShortUrl saved = shortUrlRepository.save(shortUrl);
-        cacheUrl(shortCode, saved.getOriginalUrl());
-
-        return buildUrlResponse(saved);
+        return buildUrlResponse(shortUrlRepository.save(shortUrl));
     }
 
     public String resolveAndTrack(String shortCode, HttpServletRequest request) {
-        String originalUrl = redisTemplate.opsForValue().get(shortCode);
+        ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
+                .orElseThrow(() -> new UrlNotFoundException(shortCode));
 
-        ShortUrl shortUrl;
-        if (originalUrl == null) {
-            shortUrl = shortUrlRepository.findByShortCode(shortCode)
-                    .orElseThrow(() -> new UrlNotFoundException(shortCode));
-            originalUrl = shortUrl.getOriginalUrl();
-            cacheUrl(shortCode, originalUrl);
-        } else {
-            shortUrl = shortUrlRepository.findByShortCode(shortCode)
-                    .orElseThrow(() -> new UrlNotFoundException(shortCode));
-        }
-
-        if (!shortUrl.isActive() || (shortUrl.getExpiresAt() != null && shortUrl.getExpiresAt().isBefore(LocalDateTime.now()))) {
+        if (shortUrl.getExpiresAt() != null && shortUrl.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new UrlNotFoundException(shortCode);
         }
 
@@ -97,17 +78,17 @@ public class UrlShortenerService {
 
         clickEventRepository.save(clickEvent);
 
-        return originalUrl;
+        return shortUrl.getOriginalUrl();
     }
 
     public List<UrlResponse> getAllUrls() {
-        return shortUrlRepository.findAllByOrderByCreatedAtDesc().stream()
+        return shortUrlRepository.findAllByActiveTrueOrderByCreatedAtDesc().stream()
                 .map(this::buildUrlResponse)
                 .collect(Collectors.toList());
     }
 
     public UrlResponse getUrlByShortCode(String shortCode) {
-        ShortUrl shortUrl = shortUrlRepository.findByShortCode(shortCode)
+        ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
         return buildUrlResponse(shortUrl);
     }
@@ -117,11 +98,6 @@ public class UrlShortenerService {
                 .orElseThrow(() -> new UrlNotFoundException(id));
         shortUrl.setActive(false);
         shortUrlRepository.save(shortUrl);
-        redisTemplate.delete(shortUrl.getShortCode());
-    }
-
-    private void cacheUrl(String shortCode, String originalUrl) {
-        redisTemplate.opsForValue().set(shortCode, originalUrl, cacheTtlHours, TimeUnit.HOURS);
     }
 
     private UrlResponse buildUrlResponse(ShortUrl shortUrl) {
