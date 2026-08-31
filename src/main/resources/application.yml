@@ -1,5 +1,13 @@
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        # The CSRF control for this API: Lax means the session cookie is never sent
+        # on a cross-site POST/DELETE. Set explicitly rather than relying on the
+        # browser default, which Firefox does not apply.
+        same-site: lax
+        http-only: true
 
 spring:
   application:
@@ -11,3 +19,9 @@ spring:
 app:
   base-url: http://localhost:8080
   short-code-length: 7
+  cors:
+    allowed-origins: http://localhost:8080
+  billing:
+    mock-upgrade-enabled: false
+  rate-limit:
+    anonymous-links-per-hour: 20

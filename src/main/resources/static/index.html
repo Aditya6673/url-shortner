@@ -1,188 +1,286 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CutURL | Premium URL Shortener</title>
+    <title>CutURL — Short links, clean stats</title>
+    <script>
+        // Runs before first paint so the page never flashes the wrong theme.
+        try {
+            document.documentElement.dataset.theme = localStorage.getItem('cuturl_theme')
+                || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        } catch (e) { /* storage blocked: keep the light default */ }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header glass-card">
-            <div class="logo-container">
-                <div class="logo-icon"></div>
-                <h1 class="logo-text">CutURL</h1>
-            </div>
-            <p class="tagline">Crafting shorter links for a wider reach.</p>
-        </header>
+    <header class="topbar">
+        <a class="brand" href="#">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-name">CutURL</span>
+        </a>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Stats Row -->
-            <section class="stats-row">
-                <div class="stat-card glass-card">
-                    <div class="stat-icon urls-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+        <div class="topbar-actions">
+            <button class="btn-ghost btn-icon-only" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
+                <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+                <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+            </button>
+
+            <div id="nav-anon" class="nav-group">
+                <button class="btn-ghost" id="nav-login-btn">Log in</button>
+                <button class="btn-primary" id="nav-register-btn">Create account</button>
+            </div>
+
+            <div id="nav-user" class="nav-group hidden">
+                <span class="user-chip">
+                    <span class="user-email" id="nav-user-email"></span>
+                    <span class="plan-badge" id="nav-plan-badge">Free</span>
+                </span>
+                <button class="btn-primary hidden" id="nav-upgrade-btn">Upgrade</button>
+                <button class="btn-ghost" id="nav-logout-btn">Log out</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- ============ HOME ============ -->
+    <main class="page" id="view-home">
+        <section class="hero" id="hero">
+            <h1>Short links, clean stats.</h1>
+            <p>Paste a long URL, get a short one. No account needed to start.</p>
+        </section>
+
+        <!-- Authenticated only: these are your own numbers, so they never render for visitors. -->
+        <section class="stats-row hidden" id="stats-row">
+            <div class="card stat-card">
+                <p class="stat-label">Total links</p>
+                <p class="stat-value" id="stat-total-urls">0</p>
+            </div>
+            <div class="card stat-card">
+                <p class="stat-label">Total clicks</p>
+                <p class="stat-value" id="stat-total-clicks">0</p>
+            </div>
+            <div class="card stat-card">
+                <p class="stat-label">Created today</p>
+                <p class="stat-value" id="stat-urls-today">0</p>
+            </div>
+        </section>
+
+        <div class="content-grid">
+            <section class="card create-card">
+                <h2 class="card-title">New link</h2>
+                <form id="create-url-form">
+                    <div class="field">
+                        <label for="url-input">Destination URL</label>
+                        <input type="url" id="url-input" class="input" placeholder="https://example.com/a-very-long-url" required>
                     </div>
-                    <div class="stat-info">
-                        <p class="stat-label">Total URLs</p>
-                        <h2 class="stat-value" id="stat-total-urls">0</h2>
+
+                    <button type="button" class="disclosure" id="advanced-toggle" aria-expanded="false">
+                        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        Options
+                    </button>
+
+                    <div class="disclosure-body" id="advanced-options">
+                        <!-- Custom alias is premium; the whole field is absent for visitors. -->
+                        <div class="field hidden" id="alias-field">
+                            <label for="alias-input">
+                                Custom alias
+                                <span class="pill hidden" id="alias-pill">Premium</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-prefix" id="alias-prefix">/</span>
+                                <input type="text" id="alias-input" class="input" placeholder="my-link">
+                            </div>
+                            <p class="field-hint hidden" id="alias-hint">
+                                <a href="#billing" class="link">Upgrade</a> to pick your own alias.
+                            </p>
+                        </div>
+                        <div class="field">
+                            <label for="expiry-input">Expires (optional)</label>
+                            <input type="datetime-local" id="expiry-input" class="input">
+                        </div>
                     </div>
-                </div>
-                <div class="stat-card glass-card">
-                    <div class="stat-icon clicks-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                    </div>
-                    <div class="stat-info">
-                        <p class="stat-label">Total Clicks</p>
-                        <h2 class="stat-value" id="stat-total-clicks">0</h2>
-                    </div>
-                </div>
-                <div class="stat-card glass-card">
-                    <div class="stat-icon today-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                    </div>
-                    <div class="stat-info">
-                        <p class="stat-label">URLs Today</p>
-                        <h2 class="stat-value" id="stat-urls-today">0</h2>
-                    </div>
-                </div>
+
+                    <button type="submit" class="btn-primary btn-block" id="submit-btn">
+                        <span class="btn-text">Shorten</span>
+                        <span class="btn-loader hidden"></span>
+                    </button>
+                </form>
             </section>
 
-            <div class="content-grid">
-                <!-- Create Form -->
-                <section class="create-section glass-card">
-                    <h2 class="section-title">Forge a New Link</h2>
-                    <form id="create-url-form" class="create-form">
-                        <div class="form-group">
-                            <label for="url-input" class="visually-hidden">Destination URL</label>
-                            <div class="input-wrapper">
-                                <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                                <input type="url" id="url-input" class="input-field" placeholder="https://example.com/long-url" required>
-                            </div>
-                        </div>
-                        
-                        <div class="advanced-toggle" id="advanced-toggle">
-                            <span>Advanced Options</span>
-                            <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                        </div>
-                        
-                        <div class="advanced-options" id="advanced-options">
-                            <div class="form-group">
-                                <label for="alias-input">Custom Alias (Optional)</label>
-                                <div class="input-wrapper">
-                                    <span class="input-prefix">cuturl.to/</span>
-                                    <input type="text" id="alias-input" class="input-field with-prefix" placeholder="my-custom-link">
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="expiry-input">Expiration Date (Optional)</label>
-                                <input type="datetime-local" id="expiry-input" class="input-field">
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn-primary w-full" id="submit-btn">
-                            <span class="btn-text">Shorten URL</span>
-                            <span class="btn-loader hidden"></span>
-                        </button>
-                    </form>
-                </section>
-
-                <!-- URL List -->
-                <section class="urls-section glass-card">
-                    <div class="section-header">
-                        <h2 class="section-title">Your Links</h2>
-                        <div class="search-wrapper">
-                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                            <input type="text" id="search-input" class="input-field small" placeholder="Search links...">
-                        </div>
+            <section class="card links-card">
+                <div class="card-head">
+                    <div>
+                        <h2 class="card-title">Your links</h2>
+                        <p class="card-sub" id="links-note"></p>
                     </div>
-                    <div class="table-container">
-                        <table class="url-table">
-                            <thead>
-                                <tr>
-                                    <th>Short Link</th>
-                                    <th>Original URL</th>
-                                    <th>Created</th>
-                                    <th>Clicks</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="url-table-body">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                        <div id="empty-state" class="empty-state hidden">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                            <p>No links found. Create your first short link above!</p>
-                        </div>
-                        <div id="table-loader" class="table-loader">
-                            <div class="spinner"></div>
-                        </div>
+                    <div class="search">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.5" y2="16.5"></line></svg>
+                        <input type="text" id="search-input" class="input input-sm" placeholder="Search">
                     </div>
-                </section>
-            </div>
-        </main>
-    </div>
-
-    <!-- QR Code Modal -->
-    <div class="modal-backdrop" id="qr-modal">
-        <div class="modal glass-card">
-            <button class="modal-close" aria-label="Close modal">&times;</button>
-            <div class="modal-header">
-                <h3>QR Code</h3>
-                <p id="qr-short-url" class="text-muted"></p>
-            </div>
-            <div class="modal-body qr-container">
-                <div class="qr-wrapper">
-                    <img id="qr-image" src="" alt="QR Code" class="qr-code">
-                    <div id="qr-loader" class="spinner-wrapper"><div class="spinner"></div></div>
                 </div>
-                <button class="btn-secondary w-full mt-4" id="download-qr-btn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Download PNG
-                </button>
+
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Link</th>
+                                <th>Destination</th>
+                                <th>Created</th>
+                                <th class="num">Clicks</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="url-table-body"></tbody>
+                    </table>
+                    <div id="empty-state" class="empty hidden">
+                        <p>No links yet. Create one on the left.</p>
+                    </div>
+                    <div id="table-loader" class="loading-overlay"><span class="spinner"></span></div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Authenticated only. Premium sees charts; free sees the upsell in the same slot. -->
+        <section class="card charts-card hidden" id="charts-card">
+            <div class="card-head">
+                <h2 class="card-title">Account analytics</h2>
+                <span class="pill hidden" id="charts-pill">Premium</span>
             </div>
+
+            <div class="charts-grid hidden" id="charts-grid">
+                <div class="chart">
+                    <h3>Clicks over time</h3>
+                    <div class="chart-box tall"><canvas id="dash-line-chart-canvas"></canvas></div>
+                </div>
+                <div class="chart">
+                    <h3>Browsers</h3>
+                    <div class="chart-box"><canvas id="dash-browser-chart-canvas"></canvas></div>
+                </div>
+            </div>
+
+            <div class="upsell hidden" id="charts-upsell">
+                <p class="upsell-title">See where your clicks come from</p>
+                <p class="upsell-text">Premium adds click history, browser and OS breakdowns, referrers, QR codes and custom aliases.</p>
+                <button class="btn-primary" data-goto-billing>View plans</button>
+            </div>
+        </section>
+
+        <!-- Visitors only: the funnel, not the features. -->
+        <section class="pricing hidden" id="pricing">
+            <h2>Plans</h2>
+            <div class="plan-grid">
+                <div class="card plan">
+                    <h3>Free</h3>
+                    <p class="plan-price">$0</p>
+                    <ul class="plan-list">
+                        <li>Unlimited short links</li>
+                        <li>Custom expiry dates</li>
+                        <li>Total click counts</li>
+                    </ul>
+                    <button class="btn-secondary btn-block" data-open-register>Create account</button>
+                </div>
+                <div class="card plan featured">
+                    <h3>Premium</h3>
+                    <p class="plan-price" data-price></p>
+                    <ul class="plan-list">
+                        <li>Everything in Free</li>
+                        <li>Click history and traffic breakdowns</li>
+                        <li>Per-link analytics</li>
+                        <li>QR codes</li>
+                        <li>Custom aliases</li>
+                    </ul>
+                    <button class="btn-primary btn-block" data-open-register>Create account</button>
+                </div>
+            </div>
+            <p class="pricing-note">Start free — upgrade any time from your account.</p>
+        </section>
+    </main>
+
+    <!-- ============ BILLING ============ -->
+    <main class="page hidden" id="view-billing">
+        <button class="back-link" data-goto-home>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Back to your links
+        </button>
+
+        <section class="billing-head">
+            <h1>Plans &amp; billing</h1>
+            <p id="billing-current" class="card-sub"></p>
+        </section>
+
+        <div class="plan-grid">
+            <div class="card plan">
+                <h3>Free</h3>
+                <p class="plan-price">$0</p>
+                <ul class="plan-list">
+                    <li>Unlimited short links</li>
+                    <li>Custom expiry dates</li>
+                    <li>Total click counts</li>
+                </ul>
+                <p class="plan-state" id="free-state"></p>
+            </div>
+            <div class="card plan featured">
+                <h3>Premium</h3>
+                <p class="plan-price" data-price></p>
+                <ul class="plan-list">
+                    <li>Everything in Free</li>
+                    <li>Click history and traffic breakdowns</li>
+                    <li>Per-link analytics</li>
+                    <li>QR codes</li>
+                    <li>Custom aliases</li>
+                </ul>
+                <button class="btn-primary btn-block" id="checkout-btn">
+                    <span class="btn-text">Continue to payment</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+                <p class="plan-state" id="premium-state"></p>
+            </div>
+        </div>
+
+        <p class="billing-note" id="billing-note"></p>
+    </main>
+
+    <!-- QR Modal -->
+    <div class="modal-backdrop" id="qr-modal">
+        <div class="modal">
+            <button class="modal-close" aria-label="Close">&times;</button>
+            <h3 class="modal-title">QR code</h3>
+            <p class="card-sub" id="qr-short-url"></p>
+            <div class="qr-frame">
+                <img id="qr-image" src="" alt="QR code" class="qr-img">
+                <div id="qr-loader" class="loading-overlay"><span class="spinner"></span></div>
+            </div>
+            <button class="btn-secondary btn-block" id="download-qr-btn">Download PNG</button>
         </div>
     </div>
 
     <!-- Analytics Modal -->
     <div class="modal-backdrop" id="analytics-modal">
-        <div class="modal large glass-card">
-            <button class="modal-close" aria-label="Close modal">&times;</button>
-            <div class="modal-header">
-                <h3>Link Analytics</h3>
-                <div class="flex-between">
-                    <a id="analytics-short-url" href="#" target="_blank" class="text-gradient"></a>
-                    <span class="badge" id="analytics-total-clicks">0 clicks</span>
-                </div>
+        <div class="modal wide">
+            <button class="modal-close" aria-label="Close">&times;</button>
+            <h3 class="modal-title">Link analytics</h3>
+            <div class="modal-meta">
+                <a id="analytics-short-url" href="#" target="_blank" class="link"></a>
+                <span class="badge" id="analytics-total-clicks">0 clicks</span>
             </div>
             <div class="modal-body">
-                <div id="analytics-loader" class="spinner-wrapper"><div class="spinner"></div></div>
-                <div id="analytics-content" class="analytics-content hidden">
-                    <div class="chart-section">
-                        <h4>Clicks over time</h4>
-                        <div class="chart-container line-chart">
-                            <canvas id="line-chart-canvas"></canvas>
-                        </div>
+                <div id="analytics-loader" class="loading-overlay"><span class="spinner"></span></div>
+                <div id="analytics-content" class="hidden">
+                    <div class="chart">
+                        <h3>Clicks over time</h3>
+                        <div class="chart-box tall"><canvas id="line-chart-canvas"></canvas></div>
                     </div>
-                    <div class="charts-row">
-                        <div class="chart-section half">
-                            <h4>Browsers</h4>
-                            <div class="chart-container pie-chart">
-                                <canvas id="browser-chart-canvas"></canvas>
-                            </div>
+                    <div class="charts-grid">
+                        <div class="chart">
+                            <h3>Browsers</h3>
+                            <div class="chart-box"><canvas id="browser-chart-canvas"></canvas></div>
                         </div>
-                        <div class="chart-section half">
-                            <h4>Operating Systems</h4>
-                            <div class="chart-container pie-chart">
-                                <canvas id="os-chart-canvas"></canvas>
-                            </div>
+                        <div class="chart">
+                            <h3>Operating systems</h3>
+                            <div class="chart-box"><canvas id="os-chart-canvas"></canvas></div>
                         </div>
                     </div>
                 </div>
@@ -190,7 +288,53 @@
         </div>
     </div>
 
-    <!-- Toast Container -->
+    <!-- Login Modal -->
+    <div class="modal-backdrop" id="login-modal">
+        <div class="modal">
+            <button class="modal-close" aria-label="Close">&times;</button>
+            <h3 class="modal-title">Log in</h3>
+            <form id="login-form">
+                <div class="field">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" class="input" autocomplete="email" required>
+                </div>
+                <div class="field">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" class="input" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn-primary btn-block" id="login-submit">
+                    <span class="btn-text">Log in</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </form>
+            <p class="modal-foot">No account? <a href="#" id="switch-to-register" class="link">Create one</a></p>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div class="modal-backdrop" id="register-modal">
+        <div class="modal">
+            <button class="modal-close" aria-label="Close">&times;</button>
+            <h3 class="modal-title">Create account</h3>
+            <form id="register-form">
+                <div class="field">
+                    <label for="register-email">Email</label>
+                    <input type="email" id="register-email" class="input" autocomplete="email" required>
+                </div>
+                <div class="field">
+                    <label for="register-password">Password</label>
+                    <input type="password" id="register-password" class="input" autocomplete="new-password" minlength="8" required>
+                    <p class="field-hint">At least 8 characters.</p>
+                </div>
+                <button type="submit" class="btn-primary btn-block" id="register-submit">
+                    <span class="btn-text">Create account</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </form>
+            <p class="modal-foot">Already have one? <a href="#" id="switch-to-login" class="link">Log in</a></p>
+        </div>
+    </div>
+
     <div class="toast-container" id="toast-container"></div>
 
     <script src="js/app.js"></script>

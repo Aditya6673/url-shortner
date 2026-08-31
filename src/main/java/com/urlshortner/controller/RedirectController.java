@@ -15,9 +15,7 @@ public class RedirectController {
 
     @GetMapping("/{shortCode:^[a-zA-Z0-9-]+$}")
     public String redirect(@PathVariable String shortCode, HttpServletRequest request) {
-        if (shortCode.equals("api") || shortCode.equals("css") || shortCode.equals("js") || shortCode.equals("favicon.ico")) {
-            return "forward:/" + shortCode;
-        }
+        // /api/**, /css/**, /js/** are routed before this by security + static handling.
         String originalUrl = urlShortenerService.resolveAndTrack(shortCode, request);
         return "redirect:" + originalUrl;
     }

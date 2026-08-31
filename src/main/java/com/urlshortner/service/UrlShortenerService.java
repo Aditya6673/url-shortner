@@ -2,9 +2,11 @@ package com.urlshortner.service;
 
 import com.urlshortner.document.ClickEvent;
 import com.urlshortner.document.ShortUrl;
+import com.urlshortner.document.User;
 import com.urlshortner.dto.CreateUrlRequest;
 import com.urlshortner.dto.UrlResponse;
 import com.urlshortner.exception.DuplicateAliasException;
+import com.urlshortner.exception.PremiumRequiredException;
 import com.urlshortner.exception.UrlNotFoundException;
 import com.urlshortner.repository.ClickEventRepository;
 import com.urlshortner.repository.ShortUrlRepository;
@@ -14,8 +16,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,29 +36,75 @@ public class UrlShortenerService {
     @Value("${app.short-code-length}")
     private int codeLength;
 
-    public UrlResponse createShortUrl(CreateUrlRequest request) {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private static final Set<String> RESERVED_CODES = Set.of(
+            "api", "css", "js", "login", "logout", "register",
+            "me", "dashboard", "admin", "static", "assets", "favicon.ico"
+    );
+
+    /**
+     * Create a shortened URL. If the caller is authenticated, sets ownerId.
+     * If anonymous, generates a one-time statsToken.
+     * Custom aliases require premium.
+     */
+    public UrlResponse createShortUrl(CreateUrlRequest request, User user) {
         String shortCode;
-        if (request.getCustomAlias() != null && !request.getCustomAlias().trim().isEmpty()) {
-            if (shortUrlRepository.existsByShortCode(request.getCustomAlias())) {
-                throw new DuplicateAliasException(request.getCustomAlias());
+        boolean hasCustomAlias = request.getCustomAlias() != null
+                && !request.getCustomAlias().trim().isEmpty();
+
+        if (hasCustomAlias) {
+            // Custom aliases require premium
+            if (user == null || !user.isPremium()) {
+                throw new PremiumRequiredException("custom short links");
             }
-            shortCode = request.getCustomAlias();
+
+            String alias = request.getCustomAlias().trim();
+
+            // Reject reserved codes
+            if (RESERVED_CODES.contains(alias.toLowerCase())) {
+                throw new IllegalArgumentException(
+                        "Short code '" + alias + "' is reserved and cannot be used as a custom alias");
+            }
+
+            if (shortUrlRepository.existsByShortCode(alias)) {
+                throw new DuplicateAliasException(alias);
+            }
+            shortCode = alias;
         } else {
             do {
                 shortCode = Base62Encoder.generateRandomCode(codeLength);
             } while (shortUrlRepository.existsByShortCode(shortCode));
         }
 
-        ShortUrl shortUrl = ShortUrl.builder()
+        ShortUrl.ShortUrlBuilder builder = ShortUrl.builder()
                 .shortCode(shortCode)
                 .originalUrl(request.getUrl())
                 .customAlias(request.getCustomAlias())
-                .expiresAt(request.getExpiresAt())
-                .build();
+                .expiresAt(request.getExpiresAt());
 
-        return buildUrlResponse(shortUrlRepository.save(shortUrl));
+        String statsToken = null;
+        if (user != null) {
+            builder.ownerId(user.getId());
+        } else {
+            // Anonymous link — generate a one-time stats token
+            byte[] tokenBytes = new byte[16]; // 128-bit
+            SECURE_RANDOM.nextBytes(tokenBytes);
+            statsToken = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+            builder.statsToken(statsToken);
+        }
+
+        ShortUrl saved = shortUrlRepository.save(builder.build());
+
+        UrlResponse response = UrlResponse.of(saved, baseUrl, user != null && user.isPremium());
+        // statsToken is returned only once, in this response; null for owned links
+        response.setStatsToken(statsToken);
+        return response;
     }
 
+    /**
+     * Resolve a short code and track the click. Redirects are always public.
+     */
     public String resolveAndTrack(String shortCode, HttpServletRequest request) {
         ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
@@ -81,37 +132,61 @@ public class UrlShortenerService {
         return shortUrl.getOriginalUrl();
     }
 
-    public List<UrlResponse> getAllUrls() {
-        return shortUrlRepository.findAllByActiveTrueOrderByCreatedAtDesc().stream()
-                .map(this::buildUrlResponse)
+    /**
+     * Get all URLs owned by the authenticated user.
+     */
+    public List<UrlResponse> getAllUrls(String ownerId, boolean isPremium) {
+        return shortUrlRepository.findAllByOwnerIdAndActiveTrueOrderByCreatedAtDesc(ownerId).stream()
+                .map(url -> UrlResponse.of(url, baseUrl, isPremium))
                 .collect(Collectors.toList());
     }
 
-    public UrlResponse getUrlByShortCode(String shortCode) {
+    /**
+     * Get a single URL by short code, with authorization.
+     * Owner or valid stats-token holder may access.
+     */
+    public UrlResponse getUrlByShortCode(String shortCode, User user, String statsToken) {
         ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
-        return buildUrlResponse(shortUrl);
+
+        authorizeAccess(shortUrl, user, statsToken);
+
+        return UrlResponse.of(shortUrl, baseUrl, user != null && user.isPremium());
     }
 
-    public void deleteUrl(String id) {
-        ShortUrl shortUrl = shortUrlRepository.findById(id)
-                .orElseThrow(() -> new UrlNotFoundException(id));
+    /**
+     * Soft-delete a URL by short code, with authorization.
+     * Owner or valid stats-token holder may delete.
+     */
+    public void deleteUrl(String shortCode, User user, String statsToken) {
+        ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
+                .orElseThrow(() -> new UrlNotFoundException(shortCode));
+
+        authorizeAccess(shortUrl, user, statsToken);
+
         shortUrl.setActive(false);
         shortUrlRepository.save(shortUrl);
     }
 
-    private UrlResponse buildUrlResponse(ShortUrl shortUrl) {
-        return UrlResponse.builder()
-                .id(shortUrl.getId())
-                .shortCode(shortUrl.getShortCode())
-                .shortUrl(baseUrl + "/" + shortUrl.getShortCode())
-                .originalUrl(shortUrl.getOriginalUrl())
-                .createdAt(shortUrl.getCreatedAt())
-                .expiresAt(shortUrl.getExpiresAt())
-                .clickCount(shortUrl.getClickCount())
-                .active(shortUrl.isActive())
-                .qrCodeUrl(baseUrl + "/api/qr/" + shortUrl.getShortCode())
-                .build();
+    /**
+     * Check ownership / stats-token authorization.
+     * Returns 404 (not 403) to avoid leaking link existence.
+     */
+    private void authorizeAccess(ShortUrl shortUrl, User user, String statsToken) {
+        // Owner access
+        if (user != null && shortUrl.getOwnerId() != null
+                && shortUrl.getOwnerId().equals(user.getId())) {
+            return;
+        }
+
+        // Anonymous stats-token access
+        if (shortUrl.getOwnerId() == null && shortUrl.getStatsToken() != null
+                && shortUrl.getStatsToken().equals(statsToken)) {
+            return;
+        }
+
+        // Not authorized — return 404 per spec (don't leak existence)
+        throw new UrlNotFoundException(shortUrl.getShortCode());
     }
 
     private String parseBrowser(String ua) {

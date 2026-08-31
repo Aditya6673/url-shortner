@@ -4,7 +4,6 @@ import com.urlshortner.document.ShortUrl;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,8 +15,8 @@ public interface ShortUrlRepository extends MongoRepository<ShortUrl, String> {
     // code generation could reissue it and old links in the wild would repoint.
     boolean existsByShortCode(String shortCode);
 
-    List<ShortUrl> findAllByActiveTrueOrderByCreatedAtDesc();
-    List<ShortUrl> findTop10ByActiveTrueOrderByClickCountDesc();
-    long countByActiveTrue();
-    long countByActiveTrueAndCreatedAtAfter(LocalDateTime date);
+    // Owner-scoped only. Do not add unscoped list/count queries here — the
+    // dashboard used to be global and that was the leak this slice closed.
+    // Callers derive counts and top-N from this list rather than re-querying.
+    List<ShortUrl> findAllByOwnerIdAndActiveTrueOrderByCreatedAtDesc(String ownerId);
 }

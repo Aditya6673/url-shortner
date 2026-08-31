@@ -1,8 +1,11 @@
 package com.urlshortner.controller;
 
+import com.urlshortner.document.User;
 import com.urlshortner.dto.CreateUrlRequest;
 import com.urlshortner.dto.UrlResponse;
+import com.urlshortner.repository.UserRepository;
 import com.urlshortner.service.UrlShortenerService;
+import com.urlshortner.util.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,26 +20,37 @@ import java.util.List;
 public class UrlController {
 
     private final UrlShortenerService urlShortenerService;
+    private final UserRepository userRepository;
 
     @PostMapping
     public ResponseEntity<UrlResponse> createShortUrl(@Valid @RequestBody CreateUrlRequest request) {
-        UrlResponse response = urlShortenerService.createShortUrl(request);
+        // user is nullable — anonymous callers get a statsToken
+        User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
+        UrlResponse response = urlShortenerService.createShortUrl(request, user);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @GetMapping
     public ResponseEntity<List<UrlResponse>> getAllUrls() {
-        return ResponseEntity.ok(urlShortenerService.getAllUrls());
+        // SecurityConfig enforces authentication for this endpoint
+        User user = SecurityUtils.requireCurrentUser(userRepository);
+        return ResponseEntity.ok(urlShortenerService.getAllUrls(user.getId(), user.isPremium()));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<UrlResponse> getUrlById(@PathVariable String id) {
-        return ResponseEntity.ok(urlShortenerService.getUrlByShortCode(id));
+    @GetMapping("/{shortCode}")
+    public ResponseEntity<UrlResponse> getUrlByShortCode(
+            @PathVariable String shortCode,
+            @RequestHeader(value = "X-Stats-Token", required = false) String statsToken) {
+        User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
+        return ResponseEntity.ok(urlShortenerService.getUrlByShortCode(shortCode, user, statsToken));
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUrl(@PathVariable String id) {
-        urlShortenerService.deleteUrl(id);
+    @DeleteMapping("/{shortCode}")
+    public ResponseEntity<Void> deleteUrl(
+            @PathVariable String shortCode,
+            @RequestHeader(value = "X-Stats-Token", required = false) String statsToken) {
+        User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
+        urlShortenerService.deleteUrl(shortCode, user, statsToken);
         return ResponseEntity.noContent().build();
     }
 }

@@ -14,31 +14,27 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "short_urls")
-public class ShortUrl {
+@Document(collection = "users")
+public class User {
+
     @Id
     private String id;
-    
+
     @Indexed(unique = true)
-    private String shortCode;
-    
-    private String originalUrl;
-    
-    private String customAlias;
-    
+    private String email;
+
+    private String passwordHash;
+
+    @Builder.Default
+    private Plan plan = Plan.FREE;
+
+    private LocalDateTime planExpiresAt;
+
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
-    
-    private LocalDateTime expiresAt;
-    
-    @Builder.Default
-    private long clickCount = 0;
-    
-    @Builder.Default
-    private boolean active = true;
 
-    @Indexed
-    private String ownerId;
-
-    private String statsToken;
+    public boolean isPremium() {
+        return plan == Plan.PREMIUM
+            && (planExpiresAt == null || planExpiresAt.isAfter(LocalDateTime.now()));
+    }
 }

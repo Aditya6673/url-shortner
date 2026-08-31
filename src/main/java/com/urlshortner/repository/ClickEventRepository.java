@@ -10,7 +10,10 @@ import java.util.List;
 @Repository
 public interface ClickEventRepository extends MongoRepository<ClickEvent, String> {
     List<ClickEvent> findByShortCode(String shortCode);
-    long countByShortCode(String shortCode);
-    List<ClickEvent> findByShortCodeAndClickedAtBetween(String shortCode, LocalDateTime start, LocalDateTime end);
     List<ClickEvent> findTop20ByShortCodeOrderByClickedAtDesc(String shortCode);
+
+    // Account-wide queries (for premium dashboard)
+    List<ClickEvent> findByShortCodeIn(List<String> shortCodes);
+    List<ClickEvent> findByShortCodeInAndClickedAtAfter(List<String> shortCodes, LocalDateTime after);
+    List<ClickEvent> findTop20ByShortCodeInOrderByClickedAtDesc(List<String> shortCodes);
 }
