@@ -24,7 +24,7 @@ public class UrlController {
 
     @PostMapping
     public ResponseEntity<UrlResponse> createShortUrl(@Valid @RequestBody CreateUrlRequest request) {
-        // user is nullable — anonymous callers get a statsToken
+        // user is nullable — anonymous callers may create links, they just don't own them
         User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
         UrlResponse response = urlShortenerService.createShortUrl(request, user);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
@@ -34,23 +34,19 @@ public class UrlController {
     public ResponseEntity<List<UrlResponse>> getAllUrls() {
         // SecurityConfig enforces authentication for this endpoint
         User user = SecurityUtils.requireCurrentUser(userRepository);
-        return ResponseEntity.ok(urlShortenerService.getAllUrls(user.getId(), user.isPremium()));
+        return ResponseEntity.ok(urlShortenerService.getAllUrls(user));
     }
 
     @GetMapping("/{shortCode}")
-    public ResponseEntity<UrlResponse> getUrlByShortCode(
-            @PathVariable String shortCode,
-            @RequestHeader(value = "X-Stats-Token", required = false) String statsToken) {
-        User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
-        return ResponseEntity.ok(urlShortenerService.getUrlByShortCode(shortCode, user, statsToken));
+    public ResponseEntity<UrlResponse> getUrlByShortCode(@PathVariable String shortCode) {
+        User user = SecurityUtils.requireCurrentUser(userRepository);
+        return ResponseEntity.ok(urlShortenerService.getUrlByShortCode(shortCode, user));
     }
 
     @DeleteMapping("/{shortCode}")
-    public ResponseEntity<Void> deleteUrl(
-            @PathVariable String shortCode,
-            @RequestHeader(value = "X-Stats-Token", required = false) String statsToken) {
-        User user = SecurityUtils.getCurrentUser(userRepository).orElse(null);
-        urlShortenerService.deleteUrl(shortCode, user, statsToken);
+    public ResponseEntity<Void> deleteUrl(@PathVariable String shortCode) {
+        User user = SecurityUtils.requireCurrentUser(userRepository);
+        urlShortenerService.deleteUrl(shortCode, user);
         return ResponseEntity.noContent().build();
     }
 }

@@ -5,6 +5,7 @@ import com.urlshortner.document.Plan;
 import com.urlshortner.document.ShortUrl;
 import com.urlshortner.document.User;
 import com.urlshortner.dto.*;
+import com.urlshortner.exception.AccountRequiredException;
 import com.urlshortner.exception.PremiumRequiredException;
 import com.urlshortner.exception.UrlNotFoundException;
 import com.urlshortner.repository.ShortUrlRepository;
@@ -61,7 +62,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Additionally asserts:
  * - No free-tier response body contains ClickEvent-derived fields
  * - qrCodeUrl is absent for non-premium callers
- * - statsToken is present for anonymous POST /api/urls responses
+ * - clickCount and expiresAt are absent for anonymous callers
  */
 @WebMvcTest({UrlController.class, AnalyticsController.class, QrCodeController.class,
         AuthController.class, UserController.class})
@@ -108,7 +109,6 @@ class AuthorizationMatrixTest {
     private static final String OTHER_EMAIL = "other@test.com";
     private static final String OTHER_ID = "other-456";
     private static final String SHORT_CODE = "abc1234";
-    private static final String STATS_TOKEN = "test-stats-token-abc";
 
     private User freeOwner;
     private User premiumOwner;
@@ -143,8 +143,8 @@ class AuthorizationMatrixTest {
 
         @Test
         @WithAnonymousUser
-        @DisplayName("Anonymous without custom alias → 201 with statsToken")
-        void anonymousNoAlias_returns201WithStatsToken() throws Exception {
+        @DisplayName("Anonymous without custom alias → 201, link only")
+        void anonymousNoAlias_returns201LinkOnly() throws Exception {
             CreateUrlRequest req = new CreateUrlRequest();
             req.setUrl("https://example.com");
 
@@ -152,7 +152,6 @@ class AuthorizationMatrixTest {
                     .shortCode(SHORT_CODE)
                     .shortUrl("http://localhost:8080/" + SHORT_CODE)
                     .originalUrl("https://example.com")
-                    .statsToken(STATS_TOKEN)
                     .active(true)
                     .build();
 
@@ -163,7 +162,9 @@ class AuthorizationMatrixTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(req)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.statsToken").value(STATS_TOKEN))
+                    .andExpect(jsonPath("$.shortUrl").exists())
+                    .andExpect(jsonPath("$.clickCount").doesNotExist())
+                    .andExpect(jsonPath("$.expiresAt").doesNotExist())
                     .andExpect(jsonPath("$.qrCodeUrl").doesNotExist());
         }
 
@@ -205,7 +206,7 @@ class AuthorizationMatrixTest {
 
         @Test
         @WithMockUser(username = OWNER_EMAIL)
-        @DisplayName("Premium user with custom alias → 201, no statsToken")
+        @DisplayName("Premium user with custom alias → 201")
         void premiumWithAlias_returns201() throws Exception {
             when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(premiumOwner));
 
@@ -228,8 +229,53 @@ class AuthorizationMatrixTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(req)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.statsToken").doesNotExist())
                     .andExpect(jsonPath("$.qrCodeUrl").exists());
+        }
+
+        @Test
+        @WithAnonymousUser
+        @DisplayName("Anonymous with expiry → 403")
+        void anonymousWithExpiry_returns403() throws Exception {
+            CreateUrlRequest req = new CreateUrlRequest();
+            req.setUrl("https://example.com");
+            req.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+            when(urlShortenerService.createShortUrl(any(CreateUrlRequest.class), isNull()))
+                    .thenThrow(new AccountRequiredException("expiry dates"));
+
+            mockMvc.perform(post("/api/urls")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(req)))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @WithMockUser(username = OWNER_EMAIL)
+        @DisplayName("Free user with expiry → 201 with clickCount and expiresAt")
+        void freeWithExpiry_returns201() throws Exception {
+            when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(freeOwner));
+
+            CreateUrlRequest req = new CreateUrlRequest();
+            req.setUrl("https://example.com");
+            req.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+            UrlResponse resp = UrlResponse.builder()
+                    .shortCode(SHORT_CODE)
+                    .originalUrl("https://example.com")
+                    .expiresAt(req.getExpiresAt())
+                    .clickCount(0L)
+                    .active(true)
+                    .build();
+
+            when(urlShortenerService.createShortUrl(any(CreateUrlRequest.class), eq(freeOwner)))
+                    .thenReturn(resp);
+
+            mockMvc.perform(post("/api/urls")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(req)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.expiresAt").exists())
+                    .andExpect(jsonPath("$.clickCount").value(0));
         }
     }
 
@@ -259,7 +305,7 @@ class AuthorizationMatrixTest {
                     .active(true)
                     .build();
 
-            when(urlShortenerService.getAllUrls(OWNER_ID, false))
+            when(urlShortenerService.getAllUrls(freeOwner))
                     .thenReturn(List.of(resp));
 
             mockMvc.perform(get("/api/urls"))
@@ -280,7 +326,7 @@ class AuthorizationMatrixTest {
                     .qrCodeUrl("http://localhost:8080/api/qr/" + SHORT_CODE)
                     .build();
 
-            when(urlShortenerService.getAllUrls(OWNER_ID, true))
+            when(urlShortenerService.getAllUrls(premiumOwner))
                     .thenReturn(List.of(resp));
 
             mockMvc.perform(get("/api/urls"))
@@ -297,31 +343,10 @@ class AuthorizationMatrixTest {
 
         @Test
         @WithAnonymousUser
-        @DisplayName("Anonymous without stats token → 404")
-        void anonymousNoToken_returns404() throws Exception {
-            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), isNull(), isNull()))
-                    .thenThrow(new UrlNotFoundException(SHORT_CODE));
-
+        @DisplayName("Anonymous → 401")
+        void anonymous_returns401() throws Exception {
             mockMvc.perform(get("/api/urls/{shortCode}", SHORT_CODE))
-                    .andExpect(status().isNotFound());
-        }
-
-        @Test
-        @WithAnonymousUser
-        @DisplayName("Anonymous with valid stats token → 200")
-        void anonymousWithToken_returns200() throws Exception {
-            UrlResponse resp = UrlResponse.builder()
-                    .shortCode(SHORT_CODE)
-                    .originalUrl("https://example.com")
-                    .active(true)
-                    .build();
-
-            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), isNull(), eq(STATS_TOKEN)))
-                    .thenReturn(resp);
-
-            mockMvc.perform(get("/api/urls/{shortCode}", SHORT_CODE)
-                            .header("X-Stats-Token", STATS_TOKEN))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test
@@ -330,7 +355,7 @@ class AuthorizationMatrixTest {
         void premiumNonOwner_returns404() throws Exception {
             when(userRepository.findByEmail(OTHER_EMAIL)).thenReturn(Optional.of(premiumNonOwner));
 
-            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), eq(premiumNonOwner), isNull()))
+            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), eq(premiumNonOwner)))
                     .thenThrow(new UrlNotFoundException(SHORT_CODE));
 
             mockMvc.perform(get("/api/urls/{shortCode}", SHORT_CODE))
@@ -350,7 +375,7 @@ class AuthorizationMatrixTest {
                     .qrCodeUrl("http://localhost:8080/api/qr/" + SHORT_CODE)
                     .build();
 
-            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), eq(premiumOwner), isNull()))
+            when(urlShortenerService.getUrlByShortCode(eq(SHORT_CODE), eq(premiumOwner)))
                     .thenReturn(resp);
 
             mockMvc.perform(get("/api/urls/{shortCode}", SHORT_CODE))
@@ -366,24 +391,10 @@ class AuthorizationMatrixTest {
 
         @Test
         @WithAnonymousUser
-        @DisplayName("Anonymous without stats token → 404")
-        void anonymousNoToken_returns404() throws Exception {
-            doThrow(new UrlNotFoundException(SHORT_CODE))
-                    .when(urlShortenerService).deleteUrl(eq(SHORT_CODE), isNull(), isNull());
-
+        @DisplayName("Anonymous → 401")
+        void anonymous_returns401() throws Exception {
             mockMvc.perform(delete("/api/urls/{shortCode}", SHORT_CODE))
-                    .andExpect(status().isNotFound());
-        }
-
-        @Test
-        @WithAnonymousUser
-        @DisplayName("Anonymous with valid stats token → 204")
-        void anonymousWithToken_returns204() throws Exception {
-            doNothing().when(urlShortenerService).deleteUrl(eq(SHORT_CODE), isNull(), eq(STATS_TOKEN));
-
-            mockMvc.perform(delete("/api/urls/{shortCode}", SHORT_CODE)
-                            .header("X-Stats-Token", STATS_TOKEN))
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test
@@ -391,7 +402,7 @@ class AuthorizationMatrixTest {
         @DisplayName("Free owner → 204")
         void freeOwner_returns204() throws Exception {
             when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(freeOwner));
-            doNothing().when(urlShortenerService).deleteUrl(eq(SHORT_CODE), eq(freeOwner), isNull());
+            doNothing().when(urlShortenerService).deleteUrl(eq(SHORT_CODE), eq(freeOwner));
 
             mockMvc.perform(delete("/api/urls/{shortCode}", SHORT_CODE))
                     .andExpect(status().isNoContent());
@@ -403,7 +414,7 @@ class AuthorizationMatrixTest {
         void premiumNonOwner_returns404() throws Exception {
             when(userRepository.findByEmail(OTHER_EMAIL)).thenReturn(Optional.of(premiumNonOwner));
             doThrow(new UrlNotFoundException(SHORT_CODE))
-                    .when(urlShortenerService).deleteUrl(eq(SHORT_CODE), eq(premiumNonOwner), isNull());
+                    .when(urlShortenerService).deleteUrl(eq(SHORT_CODE), eq(premiumNonOwner));
 
             mockMvc.perform(delete("/api/urls/{shortCode}", SHORT_CODE))
                     .andExpect(status().isNotFound());

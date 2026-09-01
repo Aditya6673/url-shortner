@@ -278,8 +278,12 @@ button:disabled .btn-text { visibility: hidden; }
 @media (min-width: 900px) {
     .content-grid { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
 }
-/* Visitors get one narrow column: no dashboard, just the tool. */
-.page.anon .content-grid { max-width: 46rem; }
+/* Visitors get the tool alone — no links card, so no second column. */
+.page.anon .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 34rem;
+    margin: 0 auto;
+}
 
 .stats-row {
     display: grid;
@@ -384,6 +388,21 @@ button:disabled .btn-text { visibility: hidden; }
     color: var(--text-dim);
     pointer-events: none;
 }
+
+.result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-md);
+    font-size: 0.9rem;
+}
+.result .code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-note { font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
 
 /* ============================== Table ========================== */
 .table-wrap { position: relative; overflow-x: auto; min-height: 8rem; }

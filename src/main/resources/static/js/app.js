@@ -54,8 +54,10 @@ const els = {
     submitBtn: $('submit-btn'),
     advancedToggle: $('advanced-toggle'),
     advancedOptions: $('advanced-options'),
+    createResult: $('create-result'),
+    resultLink: $('result-link'),
 
-    linksNote: $('links-note'),
+    linksCard: $('links-card'),
     searchInput: $('search-input'),
     urlTableBody: $('url-table-body'),
     emptyState: $('empty-state'),
@@ -160,28 +162,14 @@ const api = {
         }
     },
     async fetchUrls() {
-        if (state.user) {
-            try {
-                const res = await fetch(`${state.apiBase}/api/urls`, { credentials: 'include' });
-                if (!res.ok) throw new Error('Failed to fetch URLs');
-                return await res.json();
-            } catch (e) {
-                showToast('Failed to load URLs', 'error');
-                return [];
-            }
+        try {
+            const res = await fetch(`${state.apiBase}/api/urls`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Failed to fetch URLs');
+            return await res.json();
+        } catch (e) {
+            showToast('Failed to load URLs', 'error');
+            return [];
         }
-        // Anonymous: one lookup per stored stats token; 404 means the link is gone.
-        const tokens = JSON.parse(localStorage.getItem('cuturl_stats_tokens') || '{}');
-        const urls = (await Promise.all(Object.keys(tokens).map(async shortCode => {
-            const res = await fetch(`${state.apiBase}/api/urls/${shortCode}`, {
-                headers: { 'X-Stats-Token': tokens[shortCode] }
-            }).catch(() => null);
-            if (res && res.ok) return await res.json();
-            if (res && res.status === 404) delete tokens[shortCode];
-            return null;
-        }))).filter(Boolean);
-        localStorage.setItem('cuturl_stats_tokens', JSON.stringify(tokens));
-        return urls;
     },
     async createUrl(data) {
         const res = await fetch(`${state.apiBase}/api/urls`, {
@@ -194,35 +182,18 @@ const api = {
             const errorData = await res.json().catch(() => ({}));
             throw new Error(errorData.message || 'Failed to create short link');
         }
-        const created = await res.json();
-        if (!state.user && created.statsToken) {
-            const tokens = JSON.parse(localStorage.getItem('cuturl_stats_tokens') || '{}');
-            tokens[created.shortCode] = created.statsToken;
-            localStorage.setItem('cuturl_stats_tokens', JSON.stringify(tokens));
-        }
-        return created;
+        return await res.json();
     },
     async deleteUrl(shortCode) {
-        const tokens = state.user
-            ? null
-            : JSON.parse(localStorage.getItem('cuturl_stats_tokens') || '{}');
-        const headers = tokens && tokens[shortCode]
-            ? { 'X-Stats-Token': tokens[shortCode] }
-            : {};
         const res = await fetch(`${state.apiBase}/api/urls/${shortCode}`, {
             method: 'DELETE',
-            headers,
             credentials: 'include'
         });
         if (!res.ok) throw new Error('Failed to delete URL');
-        if (tokens) {
-            delete tokens[shortCode];
-            localStorage.setItem('cuturl_stats_tokens', JSON.stringify(tokens));
-        }
         return true;
     },
     async fetchAnalytics(shortCode) {
-        // Authenticated + premium + owner only; no stats-token path exists here.
+        // Authenticated + premium + owner only.
         const res = await fetch(`${state.apiBase}/api/analytics/${shortCode}`, {
             credentials: 'include'
         });
@@ -234,8 +205,7 @@ const api = {
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     init();
-    // Visitors have nothing account-wide to poll, and each poll costs one request per stored token.
-    setInterval(() => { if (state.user) refreshData(); }, 30000);
+    setInterval(refreshData, 30000);
 });
 
 async function init() {
@@ -280,29 +250,34 @@ function updateAuthUI() {
         els.navPlanBadge.className = premium ? 'plan-badge premium' : 'plan-badge';
     }
 
-    // A visitor sees the tool, their own links and the plan comparison — and no premium
-    // control at all: no account stats, no charts panel, no alias field, no QR/analytics
-    // buttons (see renderUrls). The upsell only appears once there is an account to upgrade.
+    // A visitor sees the tool and the plan comparison — nothing else. No link list
+    // (there is no anonymous list endpoint), no account stats, no charts, no alias
+    // field, no Options disclosure: click counts and expiry need an account.
     els.viewHome.classList.toggle('anon', !user);
     els.hero.classList.toggle('hidden', !!user);
     els.pricing.classList.toggle('hidden', !!user);
     els.statsRow.classList.toggle('hidden', !user);
     els.chartsCard.classList.toggle('hidden', !user);
+    els.linksCard.classList.toggle('hidden', !user);
+
+    els.advancedToggle.classList.toggle('hidden', !user);
+    if (!user) {
+        els.advancedOptions.classList.remove('open');
+        els.advancedToggle.setAttribute('aria-expanded', 'false');
+    }
 
     els.aliasField.classList.toggle('hidden', !user);
     els.aliasInput.disabled = !premium;
     els.aliasPill.classList.toggle('hidden', premium);
     els.aliasHint.classList.toggle('hidden', premium);
-
-    els.linksNote.innerText = user
-        ? 'Links on your account.'
-        : 'Saved in this browser only — create an account to keep them anywhere.';
 }
 
 async function refreshData() {
+    // Nothing here is public: both endpoints are 401 without a session.
+    if (!state.user) return;
+
     els.tableLoader.classList.remove('hidden');
 
-    // fetchDashboardStats already returns null when anonymous.
     const [stats, urls] = await Promise.all([api.fetchDashboardStats(), api.fetchUrls()]);
 
     state.stats = stats || { totalUrls: 0, totalClicks: 0, urlsCreatedToday: 0 };
@@ -361,10 +336,9 @@ function renderUrls() {
     els.emptyState.innerText = state.searchQuery ? 'Nothing matches that search.' : 'No links yet.';
     if (!rows.length) return;
 
-    // QR and per-link analytics are premium. Visitors get no such button at all;
-    // free accounts get a locked one that leads to the plans page.
+    // QR and per-link analytics are premium; free accounts get a locked button
+    // that leads to the plans page. The table itself only renders for accounts.
     const premium = !!(state.user && state.user.premium);
-    const showPremiumActions = !!state.user;
 
     rows.forEach(url => {
         const full = url.shortUrl || `${location.origin}/${url.shortCode}`;
@@ -388,13 +362,12 @@ function renderUrls() {
             <td class="num">${Number(url.clickCount) || 0}</td>
             <td>
                 <div class="row-actions">
-                    ${showPremiumActions ? `
                     <button class="icon-btn qr-action${premium ? '' : ' locked'}" data-code="${esc(url.shortCode)}" data-url="${esc(full)}" title="${premium ? 'QR code' : 'QR codes are a Premium feature'}" aria-label="QR code">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
                     </button>
                     <button class="icon-btn analytics-action${premium ? '' : ' locked'}" data-code="${esc(url.shortCode)}" data-url="${esc(full)}" title="${premium ? 'Analytics' : 'Analytics is a Premium feature'}" aria-label="Analytics">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                    </button>` : ''}
+                    </button>
                     <button class="icon-btn danger delete-action" data-code="${esc(url.shortCode)}" title="Delete" aria-label="Delete">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
@@ -516,11 +489,19 @@ function setupEventListeners() {
 
         const alias = els.aliasInput.value.trim();
         if (alias && !els.aliasInput.disabled) payload.customAlias = alias;
-        if (els.expiryInput.value) payload.expiresAt = new Date(els.expiryInput.value).toISOString();
+        // Expiry needs an account; the server rejects it for visitors with a 403.
+        if (state.user && els.expiryInput.value) payload.expiresAt = new Date(els.expiryInput.value).toISOString();
 
         setBtnLoading(els.submitBtn, true);
         try {
             const created = await api.createUrl(payload);
+            const full = created.shortUrl || `${location.origin}/${created.shortCode}`;
+
+            // The only place a visitor ever sees their link, so it is shown for everyone.
+            els.resultLink.href = full;
+            els.resultLink.innerText = full;
+            els.createResult.classList.remove('hidden');
+
             state.urls.unshift(created);
             state.stats.totalUrls++;
             state.stats.urlsCreatedToday++;
@@ -531,7 +512,7 @@ function setupEventListeners() {
             els.advancedOptions.classList.remove('open');
             els.advancedToggle.setAttribute('aria-expanded', 'false');
 
-            await copy(created.shortUrl || `${location.origin}/${created.shortCode}`);
+            await copy(full);
             showToast('Link created and copied', 'success');
         } catch (err) {
             showToast(err.message || 'Could not create the link', 'error');

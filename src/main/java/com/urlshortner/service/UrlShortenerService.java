@@ -5,6 +5,7 @@ import com.urlshortner.document.ShortUrl;
 import com.urlshortner.document.User;
 import com.urlshortner.dto.CreateUrlRequest;
 import com.urlshortner.dto.UrlResponse;
+import com.urlshortner.exception.AccountRequiredException;
 import com.urlshortner.exception.DuplicateAliasException;
 import com.urlshortner.exception.PremiumRequiredException;
 import com.urlshortner.exception.UrlNotFoundException;
@@ -16,9 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -36,22 +35,23 @@ public class UrlShortenerService {
     @Value("${app.short-code-length}")
     private int codeLength;
 
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
     private static final Set<String> RESERVED_CODES = Set.of(
             "api", "css", "js", "login", "logout", "register",
             "me", "dashboard", "admin", "static", "assets", "favicon.ico"
     );
 
     /**
-     * Create a shortened URL. If the caller is authenticated, sets ownerId.
-     * If anonymous, generates a one-time statsToken.
-     * Custom aliases require premium.
+     * Create a shortened URL. Anonymous callers get the link and nothing else;
+     * an account owns it. Expiry dates require an account, custom aliases require premium.
      */
     public UrlResponse createShortUrl(CreateUrlRequest request, User user) {
         String shortCode;
         boolean hasCustomAlias = request.getCustomAlias() != null
                 && !request.getCustomAlias().trim().isEmpty();
+
+        if (request.getExpiresAt() != null && user == null) {
+            throw new AccountRequiredException("expiry dates");
+        }
 
         if (hasCustomAlias) {
             // Custom aliases require premium
@@ -77,29 +77,15 @@ public class UrlShortenerService {
             } while (shortUrlRepository.existsByShortCode(shortCode));
         }
 
-        ShortUrl.ShortUrlBuilder builder = ShortUrl.builder()
+        ShortUrl link = ShortUrl.builder()
                 .shortCode(shortCode)
                 .originalUrl(request.getUrl())
                 .customAlias(request.getCustomAlias())
-                .expiresAt(request.getExpiresAt());
+                .expiresAt(request.getExpiresAt())
+                .ownerId(user != null ? user.getId() : null)
+                .build();
 
-        String statsToken = null;
-        if (user != null) {
-            builder.ownerId(user.getId());
-        } else {
-            // Anonymous link — generate a one-time stats token
-            byte[] tokenBytes = new byte[16]; // 128-bit
-            SECURE_RANDOM.nextBytes(tokenBytes);
-            statsToken = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
-            builder.statsToken(statsToken);
-        }
-
-        ShortUrl saved = shortUrlRepository.save(builder.build());
-
-        UrlResponse response = UrlResponse.of(saved, baseUrl, user != null && user.isPremium());
-        // statsToken is returned only once, in this response; null for owned links
-        response.setStatsToken(statsToken);
-        return response;
+        return UrlResponse.of(shortUrlRepository.save(link), baseUrl, user);
     }
 
     /**
@@ -135,58 +121,46 @@ public class UrlShortenerService {
     /**
      * Get all URLs owned by the authenticated user.
      */
-    public List<UrlResponse> getAllUrls(String ownerId, boolean isPremium) {
-        return shortUrlRepository.findAllByOwnerIdAndActiveTrueOrderByCreatedAtDesc(ownerId).stream()
-                .map(url -> UrlResponse.of(url, baseUrl, isPremium))
+    public List<UrlResponse> getAllUrls(User owner) {
+        return shortUrlRepository.findAllByOwnerIdAndActiveTrueOrderByCreatedAtDesc(owner.getId()).stream()
+                .map(url -> UrlResponse.of(url, baseUrl, owner))
                 .collect(Collectors.toList());
     }
 
     /**
-     * Get a single URL by short code, with authorization.
-     * Owner or valid stats-token holder may access.
+     * Get a single URL by short code. Owner only.
      */
-    public UrlResponse getUrlByShortCode(String shortCode, User user, String statsToken) {
+    public UrlResponse getUrlByShortCode(String shortCode, User user) {
         ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
 
-        authorizeAccess(shortUrl, user, statsToken);
+        authorizeOwner(shortUrl, user);
 
-        return UrlResponse.of(shortUrl, baseUrl, user != null && user.isPremium());
+        return UrlResponse.of(shortUrl, baseUrl, user);
     }
 
     /**
-     * Soft-delete a URL by short code, with authorization.
-     * Owner or valid stats-token holder may delete.
+     * Soft-delete a URL by short code. Owner only.
      */
-    public void deleteUrl(String shortCode, User user, String statsToken) {
+    public void deleteUrl(String shortCode, User user) {
         ShortUrl shortUrl = shortUrlRepository.findByShortCodeAndActiveTrue(shortCode)
                 .orElseThrow(() -> new UrlNotFoundException(shortCode));
 
-        authorizeAccess(shortUrl, user, statsToken);
+        authorizeOwner(shortUrl, user);
 
         shortUrl.setActive(false);
         shortUrlRepository.save(shortUrl);
     }
 
     /**
-     * Check ownership / stats-token authorization.
-     * Returns 404 (not 403) to avoid leaking link existence.
+     * Anonymous links have no owner and no way back in, so only the owner can read or
+     * delete one. Returns 404 (not 403) to avoid leaking link existence.
      */
-    private void authorizeAccess(ShortUrl shortUrl, User user, String statsToken) {
-        // Owner access
-        if (user != null && shortUrl.getOwnerId() != null
-                && shortUrl.getOwnerId().equals(user.getId())) {
-            return;
+    private void authorizeOwner(ShortUrl shortUrl, User user) {
+        if (user == null || shortUrl.getOwnerId() == null
+                || !shortUrl.getOwnerId().equals(user.getId())) {
+            throw new UrlNotFoundException(shortUrl.getShortCode());
         }
-
-        // Anonymous stats-token access
-        if (shortUrl.getOwnerId() == null && shortUrl.getStatsToken() != null
-                && shortUrl.getStatsToken().equals(statsToken)) {
-            return;
-        }
-
-        // Not authorized — return 404 per spec (don't leak existence)
-        throw new UrlNotFoundException(shortUrl.getShortCode());
     }
 
     private String parseBrowser(String ua) {

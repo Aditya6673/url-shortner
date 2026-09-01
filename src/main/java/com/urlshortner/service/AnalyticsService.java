@@ -99,7 +99,7 @@ public class AnalyticsService {
         List<UrlResponse> topUrls = ownerUrls.stream()
                 .sorted(Comparator.comparingLong(ShortUrl::getClickCount).reversed())
                 .limit(10)
-                .map(url -> UrlResponse.of(url, baseUrl, isPremium))
+                .map(url -> UrlResponse.of(url, baseUrl, user))
                 .collect(Collectors.toList());
 
         DashboardResponse.DashboardResponseBuilder builder = DashboardResponse.builder()

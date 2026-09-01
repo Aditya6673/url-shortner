@@ -27,9 +27,6 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 // Public: URL creation (anonymous allowed, rate-limited separately)
                 .requestMatchers(HttpMethod.POST, "/api/urls").permitAll()
-                // Public: single-URL access via stats token (controller handles authz)
-                .requestMatchers(HttpMethod.GET, "/api/urls/{shortCode}").permitAll()
-                .requestMatchers(HttpMethod.DELETE, "/api/urls/{shortCode}").permitAll()
                 // Public: redirect
                 .requestMatchers(HttpMethod.GET, "/{shortCode:[a-zA-Z0-9-]+}").permitAll()
                 // Everything else requires authentication

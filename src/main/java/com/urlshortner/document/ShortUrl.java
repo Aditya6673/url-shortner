@@ -39,6 +39,4 @@ public class ShortUrl {
 
     @Indexed
     private String ownerId;
-
-    private String statsToken;
 }

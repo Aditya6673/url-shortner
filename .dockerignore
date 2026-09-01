@@ -1,0 +1,8 @@
+.git
+.idea
+.vscode
+src
+docs
+target/classes
+target/test-classes
+target/surefire-reports

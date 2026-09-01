@@ -5,11 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CutURL — Short links, clean stats</title>
     <script>
-        // Runs before first paint so the page never flashes the wrong theme.
         try {
             document.documentElement.dataset.theme = localStorage.getItem('cuturl_theme')
                 || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        } catch (e) { /* storage blocked: keep the light default */ }
+        } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,7 +82,6 @@
                     </button>
 
                     <div class="disclosure-body" id="advanced-options">
-                        <!-- Custom alias is premium; the whole field is absent for visitors. -->
                         <div class="field hidden" id="alias-field">
                             <label for="alias-input">
                                 Custom alias
@@ -108,13 +106,19 @@
                         <span class="btn-loader hidden"></span>
                     </button>
                 </form>
+
+                <!-- Shown after every successful create — for visitors it is the only place the link appears. -->
+                <div class="result hidden" id="create-result">
+                    <a class="code" id="result-link" target="_blank" rel="noopener"></a>
+                    <span class="result-note">Copied to your clipboard</span>
+                </div>
             </section>
 
-            <section class="card links-card">
+            <section class="card links-card" id="links-card">
                 <div class="card-head">
                     <div>
                         <h2 class="card-title">Your links</h2>
-                        <p class="card-sub" id="links-note"></p>
+                        <p class="card-sub">Links on your account.</p>
                     </div>
                     <div class="search">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.5" y2="16.5"></line></svg>
@@ -140,8 +144,6 @@
                 </div>
             </section>
         </div>
-
-        <!-- Authenticated only. Premium sees charts; free sees the upsell in the same slot. -->
         <section class="card charts-card hidden" id="charts-card">
             <div class="card-head">
                 <h2 class="card-title">Account analytics</h2>
@@ -165,8 +167,6 @@
                 <button class="btn-primary" data-goto-billing>View plans</button>
             </div>
         </section>
-
-        <!-- Visitors only: the funnel, not the features. -->
         <section class="pricing hidden" id="pricing">
             <h2>Plans</h2>
             <div class="plan-grid">
